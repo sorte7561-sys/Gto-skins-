@@ -1,0 +1,35 @@
+let products=[],cart=JSON.parse(localStorage.getItem('gto_cart')||'[]'),whatsappNumber='';
+const $=s=>document.querySelector(s); const money=v=>Number(v).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+async function load(){
+  try{
+    const cfg=await fetch('/api/config').then(r=>r.json());
+    whatsappNumber=cfg.whatsappNumber||'';
+  }catch{}
+  const r=await fetch('/api/products'); products=await r.json(); render(); updateCount();
+}
+function render(){const q=($('#search')?.value||'').toLowerCase();const c=$('#cat')?.value||'';const list=products.filter(p=>(!q||`${p.name} ${p.description||''}`.toLowerCase().includes(q))&&(!c||p.category===c));$('#grid').innerHTML=list.length?list.map(p=>`<article class="card"><div class="thumb">${p.image_url?`<img src="${esc(p.image_url)}" alt="">`:'GTO SKINS'}</div><div class="body"><div class="muted">${esc(p.category)}</div><h3>${esc(p.name)}</h3><div class="muted">${esc(p.description||'')}</div><div class="price">${money(p.price)}</div><button class="primary" onclick="add('${p.id}')">Adicionar</button></div></article>`).join(''):'<div class="empty">Nenhuma skin encontrada.</div>'}
+function esc(s){return String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
+function add(id){const x=cart.find(i=>i.product_id===id);if(x)x.quantity++;else cart.push({product_id:id,quantity:1});save();toast('Skin adicionada ao carrinho.')}
+function save(){localStorage.setItem('gto_cart',JSON.stringify(cart));updateCount()} function updateCount(){$('#count').textContent=cart.reduce((s,i)=>s+i.quantity,0)}
+function openCart(){const rows=cart.map(i=>{const p=products.find(x=>x.id===i.product_id);return p?`<div class="row"><div><b>${esc(p.name)}</b><div class="muted">${money(p.price)} × ${i.quantity}</div></div><button class="ghost" onclick="removeItem('${p.id}')">Remover</button></div>`:''}).join('');const total=cart.reduce((s,i)=>{const p=products.find(x=>x.id===i.product_id);return s+(p?Number(p.price)*i.quantity:0)},0);show(`<h2>Seu carrinho</h2>${rows||'<p class="muted">Carrinho vazio.</p>'}${cart.length?`<hr><div class="row"><b>Total</b><b>${money(total)}</b></div><button class="primary" style="width:100%" onclick="checkout()">Fazer pedido</button>`:''}<br><button class="ghost" onclick="closeModal()">Fechar</button>`)}
+function removeItem(id){cart=cart.filter(i=>i.product_id!==id);save();openCart()}
+function checkout(){if(!cart.length)return;show(`<h2>Fazer pedido</h2><p class="muted">Depois de enviar o pedido, você será direcionado ao WhatsApp para combinar o pagamento manual e enviar o comprovante.</p><input id="name" placeholder="Seu nome" style="width:100%;margin:6px 0"><input id="email" type="email" placeholder="Seu e-mail (opcional)" style="width:100%;margin:6px 0"><button class="primary" style="width:100%;margin-top:10px" onclick="placeOrder()">Enviar pedido e abrir WhatsApp</button><br><button class="ghost" onclick="openCart()">Voltar</button>`)}
+function whatsappUrl(orderId,total,name){
+  const msg=`Olá! Fiz um pedido na GTO Skins.%0A%0APedido: ${orderId}%0ANome: ${encodeURIComponent(name)}%0ATotal: ${encodeURIComponent(money(total))}%0A%0AGostaria de receber as instruções para pagamento manual e enviar o comprovante.`;
+  return whatsappNumber?`https://wa.me/${whatsappNumber}?text=${msg}`:'';
+}
+async function placeOrder(){
+  const name=$('#name').value.trim(),email=$('#email').value.trim();
+  if(!name)return toast('Informe seu nome.');
+  show('<p>Enviando pedido...</p>');
+  try{
+    const r=await fetch('/api/orders',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({customer_name:name,customer_email:email,items:cart})});
+    const d=await r.json(); if(!r.ok)throw new Error(d.error||'Não foi possível criar o pedido.');
+    localStorage.setItem('gto_last_token',d.access_token); cart=[]; save();
+    const wa=whatsappUrl(d.order_id,d.total,name);
+    show(`<h2>Pedido criado!</h2><p>Número do pedido: <b>${esc(d.order_id)}</b></p><p>Total: <b>${money(d.total)}</b></p><p class="muted">Agora fale conosco pelo WhatsApp para combinar o pagamento manual. Após a confirmação, o download será liberado em “Meus pedidos”.</p>${wa?`<a class="primary" style="display:block;text-align:center;text-decoration:none;margin:10px 0" href="${wa}" target="_blank" rel="noopener">Abrir WhatsApp e falar com a loja</a>`:'<p class="muted">O WhatsApp da loja ainda não foi configurado.</p>'}<button class="ghost" onclick="openOrders()">Acompanhar pedido</button><button class="ghost" onclick="closeModal()" style="margin-left:8px">Fechar</button>`);
+  }catch(e){show(`<h2>Não foi possível criar o pedido</h2><p class="muted">${esc(e.message)}</p><button class="ghost" onclick="checkout()">Voltar</button>`)}
+}
+async function openOrders(){const token=localStorage.getItem('gto_last_token');if(!token)return show('<h2>Meus pedidos</h2><p class="muted">Nenhum pedido salvo neste aparelho.</p><button class="ghost" onclick="closeModal()">Fechar</button>');show('<p>Consultando pedido...</p>');const r=await fetch('/api/orders/'+encodeURIComponent(token));const d=await r.json();if(!r.ok)return show(`<p>${esc(d.error)}</p>`);const downloads=(d.downloads||[]).map(x=>`<a class="primary" style="display:block;text-align:center;text-decoration:none;margin:8px 0" href="${esc(x.url)}">Baixar skin</a>`).join('');show(`<h2>Pedido</h2><p>Status: <b>${esc(d.status)}</b></p><p>Total: <b>${money(d.total)}</b></p>${d.status==='PAGO'?(downloads||'<p class="muted">Pagamento confirmado, mas o arquivo ainda não foi configurado.</p>'):'<p class="muted">Aguardando confirmação do pagamento. Se ainda não falou com a loja, use o WhatsApp para combinar o pagamento.</p>'}<button class="ghost" onclick="closeModal()">Fechar</button>`)}
+function show(html){$('#box').innerHTML=html;$('#modal').classList.add('open')}function closeModal(){$('#modal').classList.remove('open')}function toast(t){$('#toast').textContent=t;$('#toast').classList.add('show');setTimeout(()=>$('#toast').classList.remove('show'),2200)}
+load();
