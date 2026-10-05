@@ -83,12 +83,14 @@ app.post('/api/orders', async (req, res) => {
     if (oErr) throw oErr;
 
     const rows = normalized.map(i => ({
-      order_id: order.id,
-      product_id: i.product_id,
-      product_name: map.get(i.product_id).name,
-      price: map.get(i.product_id).price,
-      quantity: i.quantity
-    }));
+  order_id: order.id,
+  product_id: i.product_id,
+  name_snapshot: map.get(i.product_id).name,
+  price_snapshot: map.get(i.product_id).price,
+  product_name: map.get(i.product_id).name,
+  price: map.get(i.product_id).price,
+  quantity: i.quantity
+}));
     const { error: oiErr } = await supabaseAdmin.from('order_items').insert(rows);
     if (oiErr) throw oiErr;
 
