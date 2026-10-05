@@ -1,32 +1,56 @@
-let token=null;let sb=null;const $=s=>document.querySelector(s);
+let token=null;
+let sb=null;
+const $=s=>document.querySelector(s);
 
-function hdr(){return {Authorization:'Bearer '+token,'Content-Type':'application/json'}}
+function hdr(){
+  return {
+    Authorization:'Bearer '+token,
+    'Content-Type':'application/json'
+  }
+}
 
 async function login(){
   try{
     const r=await fetch('/api/config');
     const c=await r.json();
-    const {createClient}=await import('https://esm.sh/@supabase/supabase-js@2');
-    sb=createClient(c.supabaseUrl,c.supabasePublishableKey);
+
+    const {createClient}=await import(
+      'https://esm.sh/@supabase/supabase-js@2'
+    );
+
+    sb=createClient(
+      c.supabaseUrl,
+      c.supabasePublishableKey
+    );
+
     const {data,error}=await sb.auth.signInWithPassword({
       email:$('#email').value,
       password:$('#pass').value
     });
+
     if(error)return alert(error.message);
+
     token=data.session.access_token;
+
     $('#login').style.display='none';
     $('#panel').style.display='block';
+
     load();
-  }catch(e){alert(e.message)}
+
+  }catch(e){
+    alert(e.message)
+  }
 }
 
 async function load(){
+
   const [p,o]=await Promise.all([
     fetch('/api/products'),
     fetch('/api/admin/orders',{headers:hdr()})
   ]);
 
-  const products=await p.json(),orders=await o.json();
+  const products=await p.json();
+  const orders=await o.json();
 
   if(!Array.isArray(orders))
     return alert(orders.error||'Erro ao carregar pedidos');
@@ -34,22 +58,53 @@ async function load(){
   $('#products').innerHTML=(products||[]).map(x=>
     `<div class="card">
       <b>${esc(x.name)}</b>
-      <div class="muted">${esc(x.category)} — R$ ${Number(x.price).toFixed(2)}</div>
-      <div>${esc(x.download_path||'sem arquivo')}</div>
+
+      <div class="muted">
+        ${esc(x.category)} — R$ ${Number(x.price).toFixed(2)}
+      </div>
+
+      <div>
+        ${esc(x.download_path||'sem arquivo')}
+      </div>
+
+      <button
+        onclick="deleteProduct('${x.id}')"
+        style="margin-top:10px;background:#dc2626;color:white;border:0;padding:10px 14px;border-radius:8px">
+        🗑️ Excluir produto
+      </button>
+
     </div>`
   ).join('')||'Nenhum';
 
   $('#orders').innerHTML=(orders||[]).map(x=>
     `<div class="card">
+
       <b>${esc(x.status)}</b> — ${esc(x.customer_name)}
-      <div>R$ ${Number(x.total).toFixed(2)}</div>
-      <div class="muted">${esc(x.customer_email||'sem e-mail')} · ${esc(x.id)}</div>
+
+      <div>
+        R$ ${Number(x.total).toFixed(2)}
+      </div>
+
+      <div class="muted">
+        ${esc(x.customer_email||'sem e-mail')} · ${esc(x.id)}
+      </div>
 
       <select onchange="setStatus('${x.id}',this.value)">
-        <option value="PENDENTE" ${x.status==='PENDENTE'?'selected':''}>PENDENTE</option>
-        <option value="PAGO" ${x.status==='PAGO'?'selected':''}>PAGO — liberar download</option>
-        <option value="CANCELADO" ${x.status==='CANCELADO'?'selected':''}>CANCELADO</option>
-        <option value="ESTORNADO" ${x.status==='ESTORNADO'?'selected':''}>ESTORNADO</option>
+        <option value="PENDENTE" ${x.status==='PENDENTE'?'selected':''}>
+          PENDENTE
+        </option>
+
+        <option value="PAGO" ${x.status==='PAGO'?'selected':''}>
+          PAGO — liberar download
+        </option>
+
+        <option value="CANCELADO" ${x.status==='CANCELADO'?'selected':''}>
+          CANCELADO
+        </option>
+
+        <option value="ESTORNADO" ${x.status==='ESTORNADO'?'selected':''}>
+          ESTORNADO
+        </option>
       </select>
 
       <button
@@ -58,11 +113,13 @@ async function load(){
         onclick="deleteOrder('${x.id}')">
         🗑️ Excluir pedido
       </button>
+
     </div>`
   ).join('')||'Nenhum';
 }
 
 async function setStatus(id,status){
+
   const r=await fetch('/api/admin/orders/'+id,{
     method:'PATCH',
     headers:hdr(),
@@ -71,12 +128,48 @@ async function setStatus(id,status){
 
   const d=await r.json();
 
-  if(!r.ok)alert(d.error);
-  else load();
+  if(!r.ok)
+    alert(d.error);
+  else
+    load();
+}
+
+async function deleteProduct(id){
+
+  if(!confirm('Tem certeza que deseja excluir este produto?'))
+    return;
+
+  try{
+
+    const r=await fetch('/api/admin/products/'+id,{
+      method:'DELETE',
+      headers:hdr()
+    });
+
+    const d=await r.json();
+
+    if(!r.ok){
+      return alert(
+        'Erro ao excluir: '+
+        (d.error||'Erro desconhecido')
+      );
+    }
+
+    alert('Produto excluído com sucesso!');
+
+    load();
+
+  }catch(e){
+
+    alert('Erro: '+e.message);
+
+  }
 }
 
 async function deleteOrder(id){
-  if(!confirm('Tem certeza que deseja excluir este pedido?'))return;
+
+  if(!confirm('Tem certeza que deseja excluir este pedido?'))
+    return;
 
   const r=await fetch('/api/admin/orders/'+id,{
     method:'DELETE',
@@ -85,38 +178,50 @@ async function deleteOrder(id){
 
   const d=await r.json();
 
-  if(!r.ok)return alert(d.error||'Erro ao excluir pedido');
+  if(!r.ok)
+    return alert(d.error||'Erro ao excluir pedido');
 
   alert('Pedido excluído com sucesso!');
+
   load();
 }
 
 async function createProduct(){
+
   try{
+
     const file=$('#image_file').files[0];
 
-    if(!file)return alert('Escolha uma foto do produto.');
+    if(!file)
+      return alert('Escolha uma foto do produto.');
 
     const ext=(file.name.split('.').pop()||'jpg')
       .toLowerCase()
       .replace(/[^a-z0-9]/g,'')||'jpg';
 
-    const path=`products/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+    const path=
+      `products/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
 
-    const {error:upErr}=await sb.storage.from('Skins').upload(
-      path,
-      file,
-      {
-        cacheControl:'3600',
-        upsert:false,
-        contentType:file.type||'image/jpeg'
-      }
-    );
+    const {error:upErr}=await sb.storage
+      .from('Skins')
+      .upload(
+        path,
+        file,
+        {
+          cacheControl:'3600',
+          upsert:false,
+          contentType:file.type||'image/jpeg'
+        }
+      );
 
     if(upErr)
-      return alert('Erro ao enviar imagem: '+upErr.message);
+      return alert(
+        'Erro ao enviar imagem: '+upErr.message
+      );
 
-    const {data:urlData}=sb.storage.from('Skins').getPublicUrl(path);
+    const {data:urlData}=sb.storage
+      .from('Skins')
+      .getPublicUrl(path);
 
     const body={
       name:$('#name').value,
@@ -135,17 +240,24 @@ async function createProduct(){
 
     const d=await r.json();
 
-    if(!r.ok)return alert(d.error);
+    if(!r.ok)
+      return alert(d.error);
 
     alert('Produto cadastrado com foto!');
+
     $('#image_file').value='';
+
     load();
+
   }catch(e){
+
     alert(e.message)
+
   }
 }
 
 function esc(s){
+
   return String(s??'').replace(
     /[&<>"']/g,
     m=>({
