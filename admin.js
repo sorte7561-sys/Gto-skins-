@@ -1,11 +1,163 @@
-let token=null;let sb=null;const $=s=>document.querySelector(s);function hdr(){return {Authorization:'Bearer '+token,'Content-Type':'application/json'}}
+let token=null;let sb=null;const $=s=>document.querySelector(s);
 
-async function login(){try{const r=await fetch('/api/config');const c=await r.json();const {createClient}=await import('https://esm.sh/@supabase/supabase-js@2');sb=createClient(c.supabaseUrl,c.supabasePublishableKey);const {data,error}=await sb.auth.signInWithPassword({email:$('#email').value,password:$('#pass').value});if(error)return alert(error.message);token=data.session.access_token;$('#login').style.display='none';$('#panel').style.display='block';load()}catch(e){alert(e.message)}}
+function hdr(){return {Authorization:'Bearer '+token,'Content-Type':'application/json'}}
 
-async function load(){const [p,o]=await Promise.all([fetch('/api/products'),fetch('/api/admin/orders',{headers:hdr()})]);const products=await p.json(),orders=await o.json();if(!Array.isArray(orders))return alert(orders.error||'Erro ao carregar pedidos');$('#products').innerHTML=(products||[]).map(x=>`<div class="card"><b>${esc(x.name)}</b><div class="muted">${esc(x.category)} — R$ ${Number(x.price).toFixed(2)}</div><div>${esc(x.download_path||'sem arquivo')}</div></div>`).join('')||'Nenhum';$('#orders').innerHTML=(orders||[]).map(x=>`<div class="card"><b>${esc(x.status)}</b> — ${esc(x.customer_name)}<div>R$ ${Number(x.total).toFixed(2)}</div><div class="muted">${esc(x.customer_email||'sem e-mail')} · ${esc(x.id)}</div><select onchange="setStatus('${x.id}',this.value)"><option value="PENDENTE" ${x.status==='PENDENTE'?'selected':''}>PENDENTE</option><option value="PAGO" ${x.status==='PAGO'?'selected':''}>PAGO — liberar download</option><option value="CANCELADO" ${x.status==='CANCELADO'?'selected':''}>CANCELADO</option><option value="ESTORNADO" ${x.status==='ESTORNADO'?'selected':''}>ESTORNADO</option></select></div>`).join('')||'Nenhum'}
+async function login(){
+  try{
+    const r=await fetch('/api/config');
+    const c=await r.json();
+    const {createClient}=await import('https://esm.sh/@supabase/supabase-js@2');
+    sb=createClient(c.supabaseUrl,c.supabasePublishableKey);
+    const {data,error}=await sb.auth.signInWithPassword({
+      email:$('#email').value,
+      password:$('#pass').value
+    });
+    if(error)return alert(error.message);
+    token=data.session.access_token;
+    $('#login').style.display='none';
+    $('#panel').style.display='block';
+    load();
+  }catch(e){alert(e.message)}
+}
 
-async function setStatus(id,status){const r=await fetch('/api/admin/orders/'+id,{method:'PATCH',headers:hdr(),body:JSON.stringify({status})});const d=await r.json();if(!r.ok)alert(d.error);else load()}
+async function load(){
+  const [p,o]=await Promise.all([
+    fetch('/api/products'),
+    fetch('/api/admin/orders',{headers:hdr()})
+  ]);
 
-async function createProduct(){try{const file=$('#image_file').files[0];if(!file)return alert('Escolha uma foto do produto.');const ext=(file.name.split('.').pop()||'jpg').toLowerCase().replace(/[^a-z0-9]/g,'')||'jpg';const path=`products/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;const {error:upErr}=await sb.storage.from('Skins').upload(path,file,{cacheControl:'3600',upsert:false,contentType:file.type||'image/jpeg'});if(upErr)return alert('Erro ao enviar imagem: '+upErr.message);const {data:urlData}=sb.storage.from('Skins').getPublicUrl(path);const body={name:$('#name').value,price:$('#price').value,category:$('#category').value||'Caminhões',image_url:urlData.publicUrl,download_path:$('#download_path').value,description:$('#description').value};const r=await fetch('/api/admin/products',{method:'POST',headers:hdr(),body:JSON.stringify(body)});const d=await r.json();if(!r.ok)return alert(d.error);alert('Produto cadastrado com foto!');$('#image_file').value='';load()}catch(e){alert(e.message)}}
+  const products=await p.json(),orders=await o.json();
 
-function esc(s){return String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}function logout(){location.reload()}
+  if(!Array.isArray(orders))
+    return alert(orders.error||'Erro ao carregar pedidos');
+
+  $('#products').innerHTML=(products||[]).map(x=>
+    `<div class="card">
+      <b>${esc(x.name)}</b>
+      <div class="muted">${esc(x.category)} — R$ ${Number(x.price).toFixed(2)}</div>
+      <div>${esc(x.download_path||'sem arquivo')}</div>
+    </div>`
+  ).join('')||'Nenhum';
+
+  $('#orders').innerHTML=(orders||[]).map(x=>
+    `<div class="card">
+      <b>${esc(x.status)}</b> — ${esc(x.customer_name)}
+      <div>R$ ${Number(x.total).toFixed(2)}</div>
+      <div class="muted">${esc(x.customer_email||'sem e-mail')} · ${esc(x.id)}</div>
+
+      <select onchange="setStatus('${x.id}',this.value)">
+        <option value="PENDENTE" ${x.status==='PENDENTE'?'selected':''}>PENDENTE</option>
+        <option value="PAGO" ${x.status==='PAGO'?'selected':''}>PAGO — liberar download</option>
+        <option value="CANCELADO" ${x.status==='CANCELADO'?'selected':''}>CANCELADO</option>
+        <option value="ESTORNADO" ${x.status==='ESTORNADO'?'selected':''}>ESTORNADO</option>
+      </select>
+
+      <button
+        class="ghost"
+        style="margin-top:8px;color:#ff6b6b"
+        onclick="deleteOrder('${x.id}')">
+        🗑️ Excluir pedido
+      </button>
+    </div>`
+  ).join('')||'Nenhum';
+}
+
+async function setStatus(id,status){
+  const r=await fetch('/api/admin/orders/'+id,{
+    method:'PATCH',
+    headers:hdr(),
+    body:JSON.stringify({status})
+  });
+
+  const d=await r.json();
+
+  if(!r.ok)alert(d.error);
+  else load();
+}
+
+async function deleteOrder(id){
+  if(!confirm('Tem certeza que deseja excluir este pedido?'))return;
+
+  const r=await fetch('/api/admin/orders/'+id,{
+    method:'DELETE',
+    headers:hdr()
+  });
+
+  const d=await r.json();
+
+  if(!r.ok)return alert(d.error||'Erro ao excluir pedido');
+
+  alert('Pedido excluído com sucesso!');
+  load();
+}
+
+async function createProduct(){
+  try{
+    const file=$('#image_file').files[0];
+
+    if(!file)return alert('Escolha uma foto do produto.');
+
+    const ext=(file.name.split('.').pop()||'jpg')
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g,'')||'jpg';
+
+    const path=`products/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+
+    const {error:upErr}=await sb.storage.from('Skins').upload(
+      path,
+      file,
+      {
+        cacheControl:'3600',
+        upsert:false,
+        contentType:file.type||'image/jpeg'
+      }
+    );
+
+    if(upErr)
+      return alert('Erro ao enviar imagem: '+upErr.message);
+
+    const {data:urlData}=sb.storage.from('Skins').getPublicUrl(path);
+
+    const body={
+      name:$('#name').value,
+      price:$('#price').value,
+      category:$('#category').value||'Caminhões',
+      image_url:urlData.publicUrl,
+      download_path:$('#download_path').value,
+      description:$('#description').value
+    };
+
+    const r=await fetch('/api/admin/products',{
+      method:'POST',
+      headers:hdr(),
+      body:JSON.stringify(body)
+    });
+
+    const d=await r.json();
+
+    if(!r.ok)return alert(d.error);
+
+    alert('Produto cadastrado com foto!');
+    $('#image_file').value='';
+    load();
+  }catch(e){
+    alert(e.message)
+  }
+}
+
+function esc(s){
+  return String(s??'').replace(
+    /[&<>"']/g,
+    m=>({
+      '&':'&amp;',
+      '<':'&lt;',
+      '>':'&gt;',
+      '"':'&quot;',
+      "'":'&#39;'
+    }[m])
+  )
+}
+
+function logout(){
+  location.reload()
+}
