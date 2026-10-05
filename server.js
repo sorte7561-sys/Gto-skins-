@@ -141,7 +141,35 @@ app.patch('/api/admin/orders/:id', requireAdmin, async (req, res) => {
   if (error) return res.status(400).json({ error: error.message });
   res.json(data);
 });
+app.delete('/api/admin/orders/:id', requireAdmin, async (req, res) => {
+  try {
+    const id = req.params.id;
 
+    const { error: itemsError } = await supabaseAdmin
+      .from('order_items')
+      .delete()
+      .eq('order_id', id);
+
+    if (itemsError) {
+      return res.status(400).json({ error: itemsError.message });
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from('orders')
+      .delete()
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) {
+      return res.status(400).json({ error: error.message });
+    }
+
+    res.json({ ok: true, order: data });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 app.post('/api/admin/products', requireAdmin, async (req, res) => {
   const { name, description, category, price, image_url, download_path, active } = req.body || {};
   const { data, error } = await supabaseAdmin.from('products').insert({
